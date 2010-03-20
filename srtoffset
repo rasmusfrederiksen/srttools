@@ -1,0 +1,111 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import os
+import codecs
+import re
+import sys
+import math
+
+IOdefaultencoding = "iso-8859-1"
+timePtrn = re.compile('(?P<frH>\d{2}):(?P<frM>\d{2}):(?P<frS>\d{2}),(?P<frMs>\d{3})\s*-->\s*(?P<toH>\d{2}):(?P<toM>\d{2}):(?P<toS>\d{2}),(?P<toMs>\d{3})')
+
+CSI = "\033["
+BOLD = CSI + "1m"
+RESET = CSI + "0;0m"
+
+ssinms = 1000
+mminms = ssinms*60
+hhinms = mminms*60
+
+def makeTimestamp (nn, hh, mm, ss, ms):
+	if (nn == '-'):
+		nn = -1
+	else:
+		nn = 1
+	interval = (nn,int(hh),int(mm),int(ss),int(ms))
+	return interval
+
+def timestamp2ms ((nn, hh, mm, ss, ms)):
+	return nn * (hh*hhinms + mm*mminms + ss*ssinms + ms)
+
+def ms2timestamp (tt):
+	if tt < 0:
+		nn = -1
+		tt = tt * -1
+	else:
+		nn = 1
+	hh = tt//hhinms
+	tt = tt - hh*hhinms
+	mm = tt//mminms
+	tt = tt - mm*mminms
+	ss = tt//ssinms
+	tt = tt - ss*ssinms
+	nn = str(nn)
+	hh = str(hh)
+	mm = str(mm)
+	ss = str(ss)
+	tt = str(tt)
+	if len(hh) == 1:
+		hh = "0" + hh
+	if len(mm) == 1:
+		mm = "0" + mm
+	if len(ss) == 1:
+		ss = "0" + ss
+	if len(tt) == 1:
+		tt = "00" + tt
+	if len(tt) == 2:
+		tt = "0" + tt
+	return (nn, hh, mm, ss, tt)
+
+def IOTextFileAsLines(filename, encoding=IOdefaultencoding):
+	myFile = codecs.open(filename, "r", encoding)
+	return myFile.readlines()
+
+def IOWriteFile(unicodestring, filename, encoding=IOdefaultencoding):
+	f = file(filename, "w")
+	f.write(unicodestring.encode(encoding))
+	f.close()
+
+######################################################################################
+
+if len(sys.argv) > 5 or len(sys.argv) < 4:
+	print "Usage: " + BOLD + "srtoffset infile.srt outfile.srt offset" + RESET
+	print "Where " + BOLD + "offset" + RESET + " takes the form hh:mm:ss,sss"
+	print "Please note that you can use an optional minus in front of the offset"
+	print "Also note that the seconds posrtion of the offset is accurate to three decimals"
+	sys.exit()
+
+if len(sys.argv) == 5:
+	subtitles = IOTextFileAsLines(sys.argv[1], sys.argv[4])
+else:
+	subtitles = IOTextFileAsLines(sys.argv[1])
+
+outfile   = sys.argv[2]
+offset    = re.search('(?P<n>-?)(?P<h>\d{2}):(?P<m>\d{2}):(?P<s>\d{2}),(?P<ms>\d{3})', sys.argv[3])
+offset    = makeTimestamp(offset.group('n'),offset.group('h'),offset.group('m'),offset.group('s'),offset.group('ms'))
+offset    = timestamp2ms(offset)
+
+firstline = -1
+outstring = ''
+for line in subtitles:
+	query = timePtrn.search(line)
+	if query:
+		fromts = makeTimestamp('',query.group('frH'),query.group('frM'),query.group('frS'),query.group('frMs'))
+		fromts = timestamp2ms(fromts)
+		tots   = makeTimestamp('',query.group('toH'),query.group('toM'),query.group('toS'),query.group('toMs'))
+		tots   = timestamp2ms(tots)
+		if firstline < 0:
+			firstline = fromts
+			if firstline+offset<0:
+				print "Error: The negative offset you have provided is\ngreater than the start-time of the first subtitle"
+				sys.exit()
+		fromts = fromts + offset
+		a,b,c,d,e = ms2timestamp(fromts)
+		tots = tots + offset
+		f,g,h,i,j = ms2timestamp(tots)
+		replacement = b+":"+c+":"+d+","+e+" --> "+g+":"+h+":"+i+","+j
+		line = timePtrn.sub(replacement,line)
+	outstring = outstring + line
+
+IOWriteFile(outstring, outfile)
